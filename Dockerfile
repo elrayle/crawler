@@ -1,78 +1,75 @@
 # Copyright (c) Microsoft Corporation and others. Licensed under the MIT license.
 # SPDX-License-Identifier: MIT
 
-#FROM fossology/fossology:3.4.0 as fossology
-#COPY fossology_init.sh fossology_init.sh
-#RUN ./fossology_init.sh
-
-FROM node:16
+FROM python:3.6-slim-buster AS python_builds
 ENV APPDIR=/opt/service
-#RUN apk update && apk upgrade && \
-#    apk add --no-cache bash git openssh
 
 ARG BUILD_NUMBER=0
 ENV CRAWLER_BUILD_NUMBER=$BUILD_NUMBER
 
-# Ruby and Python Dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends --no-install-suggests curl bzip2 build-essential libssl-dev libreadline-dev zlib1g-dev cmake python3 python3-dev python3-pip xz-utils libxml2-dev libxslt1-dev libpopt0 && \
-  rm -rf /var/lib/apt/lists/* && \
-  curl -L https://github.com/rbenv/ruby-build/archive/v20180822.tar.gz | tar -zxvf - -C /tmp/ && \
-  cd /tmp/ruby-build-* && ./install.sh && cd / && \
-  ruby-build -v 2.5.1 /usr/local && rm -rfv /tmp/ruby-build-* && \
-  gem install bundler -v 2.3.26 --no-document
+# Support tools
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends --no-install-suggests \
+  bzip2 build-essential cmake curl gcc git \
+  libssl-dev libreadline-dev zlib1g zlib1g-dev \
+  libxml2-dev libxslt1-dev libgomp1 libpopt0 xz-utils
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Scancode
-ARG SCANCODE_VERSION="30.1.0"
-RUN pip3 install --upgrade pip setuptools wheel && \
-  curl -Os https://raw.githubusercontent.com/nexB/scancode-toolkit/v$SCANCODE_VERSION/requirements.txt && \
-  pip3 install --constraint requirements.txt scancode-toolkit==$SCANCODE_VERSION && \
-  rm requirements.txt && \
-  scancode --reindex-licenses && \
-  scancode --version
+# Install node
+RUN echo "******** Install node ********"
+ENV NODE_VERSION=16.13.0
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+ENV NVM_DIR=/root/.nvm
+RUN . "$NVM_DIR/nvm.sh" && nvm install ${NODE_VERSION}
+RUN . "$NVM_DIR/nvm.sh" && nvm use v${NODE_VERSION}
+RUN . "$NVM_DIR/nvm.sh" && nvm alias default v${NODE_VERSION}
+ENV PATH="/root/.nvm/versions/node/v${NODE_VERSION}/bin/:${PATH}"
 
+# Install ruby
+RUN curl -L https://github.com/rbenv/ruby-build/archive/v20180822.tar.gz | tar -zxvf - -C /tmp/
+RUN cd /tmp/ruby-build-* && ./install.sh && cd /
+RUN ruby-build -v 2.5.1 /usr/local && rm -rfv /tmp/ruby-build-*
+RUN gem install bundler -v 2.3.26 --no-document
+
+
+# Install scancode
+# Requirements as per https://scancode-toolkit.readthedocs.io/en/latest/getting-started/install.html
+RUN echo "******** Install scancode ********"
+ARG SCANCODE_VERSION="30.1.0.p1"
+RUN pip3 install click
+RUN pip3 install --upgrade pip setuptools wheel
+RUN curl -Os https://raw.githubusercontent.com/elrayle/scancode-toolkit/v$SCANCODE_VERSION/requirements.txt
+RUN pip3 install --constraint requirements.txt --verbose git+https://github.com/elrayle/scancode-toolkit.git@v$SCANCODE_VERSION
+RUN rm requirements.txt
 ENV SCANCODE_HOME=/usr/local/bin
 
-# Licensee
+# Install REUSE
+RUN echo "******** Install REUSE ********"
+RUN pip3 install setuptools
+RUN pip3 install reuse==1.0.0
+
+# Install Licensee
 # The latest version of nokogiri (1.13.1) and faraday (2.3.0) requires RubyGem 2.6.0 while
 # the current RubyGem is 2.5.1. However, after upgrading RubyGem to 3.1.2, licensee:9.12.0 starts
 # to have hard time to find license in LICENSE file, like component npm/npmjs/-/caniuse-lite/1.0.30001344.
 # So we pin to the previous version of nokogiri and faraday.
+RUN echo "******** Install Licensee ********"
 RUN gem install nokogiri:1.12.5 --no-document && \
   gem install faraday:1.10.0 --no-document && \
   gem install public_suffix:4.0.7 --no-document && \
   gem install licensee:9.12.0 --no-document
 
-# REUSE
-RUN pip3 install setuptools
-RUN pip3 install reuse
-
-# FOSSology
-# WORKDIR /opt
-# RUN git clone https://github.com/fossology/fossology.git
-# RUN cd fossology && git checkout -b clearlydefined tags/3.4.0
-
-# See https://github.com/fossology/fossology/blob/faaaeedb9d08f00def00f9b8a68a5cffc5eaa657/utils/fo-installdeps#L103-L105
-# Additional libjsoncpp-dev https://github.com/fossology/fossology/blob/261d1a3e663b5fd20652a05b2d6360f4b31a17cb/src/copyright/mod_deps#L79-L80
-# RUN apt-get update && apt-get install -y --no-install-recommends --no-install-suggests \
-#  libmxml-dev curl libxml2-dev libcunit1-dev libjsoncpp-dev \
-#  build-essential libtext-template-perl subversion rpm librpm-dev libmagic-dev libglib2.0 libboost-regex-dev libboost-program-options-dev
-
-# WORKDIR /opt/fossology/src/nomos/agent
-# RUN make -f Makefile.sa
-# RUN echo $(./nomossa -V)
-
-# NOTE: must build copyright before Monk to cause libfossology to be built
-# WORKDIR /opt/fossology/src/copyright/agent
-# RUN make
-
-# WORKDIR /opt/fossology/src/monk/agent
-# RUN make
-# RUN echo $(./monk -V)
-# COPY --from=fossology /tmp/monk_knowledgebase .
-
-# ENV FOSSOLOGY_HOME=/opt/fossology/src
+# Check versions of installs
+RUN python --version
+RUN node --version
+RUN npm --version
+RUN ruby --version
+RUN scancode --version
+RUN reuse --version
+RUN licensee version
 
 # Crawler config
+RUN echo "******** Configure the crawler and copy it to the working directory ********"
 ENV CRAWLER_DEADLETTER_PROVIDER=cd(azblob)
 ENV CRAWLER_NAME=cdcrawlerprod
 ENV CRAWLER_QUEUE_PREFIX=cdcrawlerprod
