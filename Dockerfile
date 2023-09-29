@@ -35,7 +35,7 @@ ENV PATH="/root/.nvm/versions/node/v${NODE_VERSION}/bin/:${PATH}"
 # Install scancode
 # Requirements as per https://scancode-toolkit.readthedocs.io/en/latest/getting-started/install.html
 RUN echo "******** Install scancode ********"
-ARG SCANCODE_VERSION="30.1.0.p1"
+ARG SCANCODE_VERSION="30.1.0.p1.nv.a"
 RUN pip3 install click
 RUN pip3 install --upgrade pip setuptools wheel
 RUN curl -Os https://raw.githubusercontent.com/elrayle/scancode-toolkit/v$SCANCODE_VERSION/requirements.txt
