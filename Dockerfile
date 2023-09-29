@@ -35,11 +35,11 @@ RUN gem install bundler -v 2.3.26 --no-document
 # Install scancode
 # Requirements as per https://scancode-toolkit.readthedocs.io/en/latest/getting-started/install.html
 RUN echo "******** Install scancode ********"
-ARG SCANCODE_VERSION="30.1.0.p1"
+ARG SCANCODE_VERSION="30.1.0"
 RUN pip3 install click
 RUN pip3 install --upgrade pip setuptools wheel
-RUN curl -Os https://raw.githubusercontent.com/elrayle/scancode-toolkit/v$SCANCODE_VERSION/requirements.txt
-RUN pip3 install --constraint requirements.txt --verbose git+https://github.com/elrayle/scancode-toolkit.git@v$SCANCODE_VERSION
+RUN curl -Os https://raw.githubusercontent.com/nexB/scancode-toolkit/v$SCANCODE_VERSION/requirements.txt
+RUN pip3 install --constraint requirements.txt --verbose git+https://github.com/nexB/scancode-toolkit.git@v$SCANCODE_VERSION
 RUN rm requirements.txt
 RUN scancode --reindex-licenses
 ENV SCANCODE_HOME=/usr/local/bin
